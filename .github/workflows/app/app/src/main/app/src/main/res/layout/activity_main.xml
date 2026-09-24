@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="24dp"
+    android:gravity="center_horizontal"
+    android:background="#121212">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Yamaha R6 Sound Emulator"
+        android:textColor="#FFFFFF"
+        android:textSize="22sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="24dp" />
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Status: Disconnected"
+        android:textColor="#FFBB86FC"
+        android:textSize="14sp"
+        android:layout_marginBottom="24dp" />
+
+    <TextView
+        android:id="@+id/bikeRpmText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Bike RPM: 0"
+        android:textColor="#03DAC6"
+        android:textSize="26sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:id="@+id/r6RpmText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Yamaha R6 RPM: 0"
+        android:textColor="#CF6679"
+        android:textSize="26sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="36dp" />
+
+    <Button
+        android:id="@+id/connectBtn"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="Connect OBD2"
+        android:textSize="16sp"
+        android:layout_marginBottom="16dp" />
+
+    <Button
+        android:id="@+id/soundBtn"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:text="Start Sound"
+        android:textSize="16sp" />
+
+</LinearLayout>
