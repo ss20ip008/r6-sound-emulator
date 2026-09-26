@@ -148,15 +148,13 @@ class MainActivity : AppCompatActivity() {
                     val rpm = parseRpmResponse(response)
 
                     if (rpm >= 0) {
-                        val scaledR6Rpm = rpm * (16500.0 / 9500.0)
-
                         mainHandler.post {
                             bikeRpmText.text = "Bike RPM: ${rpm.toInt()}"
-                            r6RpmText.text = "Yamaha R6 RPM: ${scaledR6Rpm.toInt()}"
+                            r6RpmText.text = "Yamaha R6 RPM: ${rpm.toInt()}"
                         }
 
                         if (isSoundActive) {
-                            audioEngine.setRpm(scaledR6Rpm)
+                            audioEngine.setRpm(rpm)
                         }
                     }
                 }
@@ -287,13 +285,11 @@ class MultiSampleCrossfadeEngine(private val context: Context) {
                 if (currentRpm < 400.0) {
                     writeBuffer.fill(0)
                 } else {
-                    // Calculate individual sample pitch speed ratios
                     val speed1400 = currentRpm / 1400.0
                     val speed4000 = currentRpm / 4000.0
                     val speed6000 = currentRpm / 6000.0
                     val speed8000 = currentRpm / 8000.0
 
-                    // Calculate Crossfade Weights (W1, W2, W3, W4)
                     val (w1, w2, w3, w4) = calculateWeights(currentRpm)
 
                     for (i in writeBuffer.indices) {
@@ -302,11 +298,9 @@ class MultiSampleCrossfadeEngine(private val context: Context) {
                         val s3 = getInterpolatedSample(sample6000, ptr6000)
                         val s4 = getInterpolatedSample(sample8000, ptr8000)
 
-                        // Weighted Audio Blend
                         val blended = (s1 * w1) + (s2 * w2) + (s3 * w3) + (s4 * w4)
                         writeBuffer[i] = blended.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
 
-                        // Advance sample pointers
                         if (sample1400.isNotEmpty()) ptr1400 = (ptr1400 + speed1400) % sample1400.size
                         if (sample4000.isNotEmpty()) ptr4000 = (ptr4000 + speed4000) % sample4000.size
                         if (sample6000.isNotEmpty()) ptr6000 = (ptr6000 + speed6000) % sample6000.size
@@ -343,7 +337,7 @@ class MultiSampleCrossfadeEngine(private val context: Context) {
                 w3 = 1.0f - t
                 w4 = t
             }
-            else -> { // Above 8000 RPM up to redline (16500 RPM)
+            else -> {
                 w4 = 1.0f
             }
         }
