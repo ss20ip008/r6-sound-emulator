@@ -20,6 +20,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import java.io.InputStream
 import java.io.OutputStream
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
 import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
@@ -33,7 +35,7 @@ class MainActivity : AppCompatActivity() {
     private var bluetoothSocket: BluetoothSocket? = null
     private var isConnected = false
     private var isSoundActive = false
-    private val audioSynth = EngineAudioSynth()
+    private lateinit var audioEngine: MultiSampleCrossfadeEngine
 
     private val sppUuid: UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB")
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -48,6 +50,8 @@ class MainActivity : AppCompatActivity() {
         connectBtn = findViewById(R.id.connectBtn)
         soundBtn = findViewById(R.id.soundBtn)
 
+        audioEngine = MultiSampleCrossfadeEngine(this)
+
         checkPermissions()
 
         connectBtn.setOnClickListener {
@@ -57,10 +61,10 @@ class MainActivity : AppCompatActivity() {
         soundBtn.setOnClickListener {
             isSoundActive = !isSoundActive
             if (isSoundActive) {
-                audioSynth.start()
+                audioEngine.start()
                 soundBtn.text = "Stop Sound"
             } else {
-                audioSynth.stop()
+                audioEngine.stop()
                 soundBtn.text = "Start Sound"
             }
         }
@@ -96,7 +100,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         if (obdDevice == null) {
-            statusText.text = "Status: OBD2 device not found in paired list. Pair ELM327 first!"
+            statusText.text = "Status: OBD2 device not found in paired list."
             return
         }
 
@@ -125,18 +129,18 @@ class MainActivity : AppCompatActivity() {
         if (inputStream == null || outputStream == null) return
 
         try {
-            outputStream.write("AT Z\r".toByteArray())
-            Thread.sleep(300)
-            outputStream.write("AT SP 0\r".toByteArray())
+            outputStream.write("ATZ\r".toByteArray())
+            Thread.sleep(200)
+            outputStream.write("ATL0\rATH0\rATS0\rATAT2\r".toByteArray())
             Thread.sleep(200)
         } catch (e: Exception) {}
 
-        val buffer = ByteArray(256)
+        val buffer = ByteArray(128)
         while (isConnected) {
             try {
-                outputStream.write("010C\r".toByteArray())
+                outputStream.write("010C1\r".toByteArray())
                 outputStream.flush()
-                Thread.sleep(80)
+                Thread.sleep(15)
 
                 val bytesRead = inputStream.read(buffer)
                 if (bytesRead > 0) {
@@ -152,7 +156,7 @@ class MainActivity : AppCompatActivity() {
                         }
 
                         if (isSoundActive) {
-                            audioSynth.setRpm(scaledR6Rpm)
+                            audioEngine.setRpm(scaledR6Rpm)
                         }
                     }
                 }
@@ -190,69 +194,172 @@ class MainActivity : AppCompatActivity() {
         connectBtn.text = "Connect OBD2"
         bikeRpmText.text = "Bike RPM: 0"
         r6RpmText.text = "Yamaha R6 RPM: 0"
-        audioSynth.setRpm(0.0)
+        audioEngine.setRpm(0.0)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         disconnectObd()
-        audioSynth.stop()
+        audioEngine.stop()
     }
 }
 
-class EngineAudioSynth {
+class MultiSampleCrossfadeEngine(private val context: Context) {
     private var isRunning = false
     private var audioTrack: AudioTrack? = null
-    @Volatile private var targetFreq = 0.0
-    private var currentFreq = 0.0
+
+    private var sample1400: ShortArray = ShortArray(0)
+    private var sample4000: ShortArray = ShortArray(0)
+    private var sample6000: ShortArray = ShortArray(0)
+    private var sample8000: ShortArray = ShortArray(0)
+
+    @Volatile private var targetRpm = 0.0
+    private var currentRpm = 0.0
+
+    init {
+        sample1400 = loadWavResource("r6_1400")
+        sample4000 = loadWavResource("r6_4000")
+        sample6000 = loadWavResource("r6_6000")
+        sample8000 = loadWavResource("r6_8000")
+    }
+
+    private fun loadWavResource(resName: String): ShortArray {
+        try {
+            val resId = context.resources.getIdentifier(resName, "raw", context.packageName)
+            if (resId != 0) {
+                val inputStream = context.resources.openRawResource(resId)
+                val bytes = inputStream.readBytes()
+                inputStream.close()
+
+                val pcmBytes = bytes.copyOfRange(44, bytes.size)
+                val shortArray = ShortArray(pcmBytes.size / 2)
+                ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(shortArray)
+                return shortArray
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return ShortArray(0)
+    }
 
     fun start() {
-        if (isRunning) return
+        if (isRunning || sample1400.isEmpty()) return
         val sampleRate = 44100
         val minBufSize = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
 
-        audioTrack = AudioTrack.Builder()
-            .setAudioAttributes(AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
-            .setAudioFormat(AudioFormat.Builder().setEncoding(AudioFormat.ENCODING_PCM_16BIT).setSampleRate(sampleRate).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
-            .setBufferSizeInBytes(minBufSize * 2)
-            .setTransferMode(AudioTrack.MODE_STREAM)
+        val audioAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_GAME)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .setFlags(AudioAttributes.FLAG_LOW_LATENCY)
             .build()
 
+        val audioFormat = AudioFormat.Builder()
+            .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
+            .setSampleRate(sampleRate)
+            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+            .build()
+
+        val builder = AudioTrack.Builder()
+            .setAudioAttributes(audioAttributes)
+            .setAudioFormat(audioFormat)
+            .setBufferSizeInBytes(minBufSize)
+            .setTransferMode(AudioTrack.MODE_STREAM)
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            builder.setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+        }
+
+        audioTrack = builder.build()
         audioTrack?.play()
         isRunning = true
 
         Thread {
-            var phase = 0.0
-            val buffer = ShortArray(1024)
+            var ptr1400 = 0.0
+            var ptr4000 = 0.0
+            var ptr6000 = 0.0
+            var ptr8000 = 0.0
+
+            val writeBuffer = ShortArray(512)
 
             while (isRunning) {
-                currentFreq += (targetFreq - currentFreq) * 0.15
+                currentRpm += (targetRpm - currentRpm) * 0.30
 
-                if (currentFreq < 15.0) {
-                    buffer.fill(0)
+                if (currentRpm < 400.0) {
+                    writeBuffer.fill(0)
                 } else {
-                    val phaseInc = (2.0 * Math.PI * currentFreq) / sampleRate
-                    for (i in buffer.indices) {
-                        val normPhase = phase / (2.0 * Math.PI)
-                        val saw = 2.0 * (normPhase - Math.floor(normPhase + 0.5))
-                        val sine2 = Math.sin(phase * 2.0)
-                        val sine4 = Math.sin(phase * 4.0)
-                        val noise = (Math.random() - 0.5) * 0.08
+                    // Calculate individual sample pitch speed ratios
+                    val speed1400 = currentRpm / 1400.0
+                    val speed4000 = currentRpm / 4000.0
+                    val speed6000 = currentRpm / 6000.0
+                    val speed8000 = currentRpm / 8000.0
 
-                        val sampleValue = (saw * 0.45 + sine2 * 0.30 + sine4 * 0.20 + noise) * 0.75
-                        buffer[i] = (sampleValue * Short.MAX_VALUE).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+                    // Calculate Crossfade Weights (W1, W2, W3, W4)
+                    val (w1, w2, w3, w4) = calculateWeights(currentRpm)
 
-                        phase += phaseInc
-                        if (phase >= 2.0 * Math.PI) phase -= 2.0 * Math.PI
+                    for (i in writeBuffer.indices) {
+                        val s1 = getInterpolatedSample(sample1400, ptr1400)
+                        val s2 = getInterpolatedSample(sample4000, ptr4000)
+                        val s3 = getInterpolatedSample(sample6000, ptr6000)
+                        val s4 = getInterpolatedSample(sample8000, ptr8000)
+
+                        // Weighted Audio Blend
+                        val blended = (s1 * w1) + (s2 * w2) + (s3 * w3) + (s4 * w4)
+                        writeBuffer[i] = blended.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
+
+                        // Advance sample pointers
+                        if (sample1400.isNotEmpty()) ptr1400 = (ptr1400 + speed1400) % sample1400.size
+                        if (sample4000.isNotEmpty()) ptr4000 = (ptr4000 + speed4000) % sample4000.size
+                        if (sample6000.isNotEmpty()) ptr6000 = (ptr6000 + speed6000) % sample6000.size
+                        if (sample8000.isNotEmpty()) ptr8000 = (ptr8000 + speed8000) % sample8000.size
                     }
                 }
-                audioTrack?.write(buffer, 0, buffer.size)
+                audioTrack?.write(writeBuffer, 0, writeBuffer.size)
             }
         }.start()
     }
 
+    private fun calculateWeights(rpm: Double): FloatArray {
+        var w1 = 0.0f
+        var w2 = 0.0f
+        var w3 = 0.0f
+        var w4 = 0.0f
+
+        when {
+            rpm <= 1400.0 -> {
+                w1 = 1.0f
+            }
+            rpm in 1400.0..4000.0 -> {
+                val t = ((rpm - 1400.0) / (4000.0 - 1400.0)).toFloat()
+                w1 = 1.0f - t
+                w2 = t
+            }
+            rpm in 4000.0..6000.0 -> {
+                val t = ((rpm - 4000.0) / (6000.0 - 4000.0)).toFloat()
+                w2 = 1.0f - t
+                w3 = t
+            }
+            rpm in 6000.0..8000.0 -> {
+                val t = ((rpm - 6000.0) / (8000.0 - 6000.0)).toFloat()
+                w3 = 1.0f - t
+                w4 = t
+            }
+            else -> { // Above 8000 RPM up to redline (16500 RPM)
+                w4 = 1.0f
+            }
+        }
+        return floatArrayOf(w1, w2, w3, w4)
+    }
+
+    private fun getInterpolatedSample(buffer: ShortArray, pointer: Double): Double {
+        if (buffer.isEmpty()) return 0.0
+        val idx0 = pointer.toInt() % buffer.size
+        val idx1 = (idx0 + 1) % buffer.size
+        val frac = pointer - pointer.toInt()
+        return buffer[idx0] + frac * (buffer[idx1] - buffer[idx0])
+    }
+
     fun setRpm(r6Rpm: Double) {
-        targetFreq = if (r6Rpm > 300) r6Rpm / 30.0 else 0.0
+        targetRpm = r6Rpm
     }
 
     fun stop() {
