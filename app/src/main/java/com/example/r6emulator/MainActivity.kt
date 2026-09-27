@@ -35,6 +35,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var soundBtn: Button
     @SuppressLint("UseSwitchCompatOrMaterialCode")
     private lateinit var filterSwitch: Switch
+    @SuppressLint("UseSwitchCompatOrMaterialCode")
+    private lateinit var halfRpmSwitch: Switch
     private lateinit var simRpmSeekBar: SeekBar
     private lateinit var simRpmText: TextView
 
@@ -58,6 +60,7 @@ class MainActivity : AppCompatActivity() {
         soundBtn = findViewById(R.id.soundBtn)
 
         filterSwitch = findViewById(R.id.filterSwitch)
+        halfRpmSwitch = findViewById(R.id.halfRpmSwitch)
         simRpmSeekBar = findViewById(R.id.simRpmSeekBar)
         simRpmText = findViewById(R.id.simRpmText)
 
@@ -84,6 +87,13 @@ class MainActivity : AppCompatActivity() {
         filterSwitch.setOnCheckedChangeListener { _, isChecked ->
             audioEngine.setFilterEnabled(isChecked)
             Toast.makeText(this, if (isChecked) "Stock Muffler DSP Active" else "Raw Sound Direct", Toast.LENGTH_SHORT).show()
+        }
+
+        // Toggle 0.5x Pitch Correction (Fixes Double-RPM Sound)
+        halfRpmSwitch.setOnCheckedChangeListener { _, isChecked ->
+            val scale = if (isChecked) 0.5 else 1.0
+            audioEngine.setRpmMultiplier(scale)
+            Toast.makeText(this, if (isChecked) "0.5x Pitch Correction Enabled" else "1.0x Normal Pitch", Toast.LENGTH_SHORT).show()
         }
 
         // Engine RPM Simulator (Test sound without OBD2 connection)
@@ -243,42 +253,39 @@ class MainActivity : AppCompatActivity() {
     }
 }
 
-/**
- * Audio Engine with Dynamic Crossfading and Real-Time Acoustic DSP Filters
- */
+private data class LoadedWav(val samples: ShortArray, val sampleRate: Int)
+
 class MultiSampleCrossfadeEngine(private val context: Context) {
     private var isRunning = false
     private var audioTrack: AudioTrack? = null
 
-    private var sample1400: ShortArray = ShortArray(0)
-    private var sample4000: ShortArray = ShortArray(0)
-    private var sample6000: ShortArray = ShortArray(0)
-    private var sample8000: ShortArray = ShortArray(0)
+    private var wav1400 = LoadedWav(ShortArray(0), 44100)
+    private var wav4000 = LoadedWav(ShortArray(0), 44100)
+    private var wav6000 = LoadedWav(ShortArray(0), 44100)
+    private var wav8000 = LoadedWav(ShortArray(0), 44100)
 
     @Volatile private var targetRpm = 0.0
     private var currentRpm = 0.0
     @Volatile private var isFilterEnabled = true
+    @Volatile private var rpmMultiplier = 1.0
 
-    // Real-Time Biquad DSP Filters
     private val warmthEq = BiquadFilter()
     private val sweetnessDip = BiquadFilter()
     private val lpf1 = BiquadFilter()
     private val lpf2 = BiquadFilter()
 
     init {
-        // Load raw WAV files with 0.10s edge trim applied to eliminate loop clicks
         val trimMarginSeconds = 0.10
-        sample1400 = loadWavResourceTrimmed("r6_1400", trimMarginSeconds)
-        sample4000 = loadWavResourceTrimmed("r6_4000", trimMarginSeconds)
-        sample6000 = loadWavResourceTrimmed("r6_6000", trimMarginSeconds)
-        sample8000 = loadWavResourceTrimmed("r6_8000", trimMarginSeconds)
+        wav1400 = loadWavResourceTrimmed("r6_1400", trimMarginSeconds)
+        wav4000 = loadWavResourceTrimmed("r6_4000", trimMarginSeconds)
+        wav6000 = loadWavResourceTrimmed("r6_6000", trimMarginSeconds)
+        wav8000 = loadWavResourceTrimmed("r6_8000", trimMarginSeconds)
     }
 
-    fun setFilterEnabled(enabled: Boolean) {
-        isFilterEnabled = enabled
-    }
+    fun setFilterEnabled(enabled: Boolean) { isFilterEnabled = enabled }
+    fun setRpmMultiplier(multiplier: Double) { rpmMultiplier = multiplier }
 
-    private fun loadWavResourceTrimmed(resName: String, trimSeconds: Double): ShortArray {
+    private fun loadWavResourceTrimmed(resName: String, trimSeconds: Double): LoadedWav {
         try {
             val resId = context.resources.getIdentifier(resName, "raw", context.packageName)
             if (resId != 0) {
@@ -286,28 +293,57 @@ class MultiSampleCrossfadeEngine(private val context: Context) {
                 val bytes = inputStream.readBytes()
                 inputStream.close()
 
-                val pcmBytes = bytes.copyOfRange(44, bytes.size)
-                val totalShorts = pcmBytes.size / 2
-                val fullArray = ShortArray(totalShorts)
-                ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(fullArray)
+                if (bytes.size < 44) return LoadedWav(ShortArray(0), 44100)
 
-                // 0.10s edge trim calculation (44100 samples/sec * 0.10s)
-                val trimSamples = (44100 * trimSeconds).toInt()
-                val startIndex = trimSamples.coerceAtMost(fullArray.size / 2)
-                val endIndex = (fullArray.size - trimSamples).coerceAtLeast(startIndex)
+                val channels = (bytes[22].toInt() and 0xFF) or ((bytes[23].toInt() and 0xFF) shl 8)
+                val fileSampleRate = (bytes[24].toInt() and 0xFF) or
+                        ((bytes[25].toInt() and 0xFF) shl 8) or
+                        ((bytes[26].toInt() and 0xFF) shl 16) or
+                        ((bytes[27].toInt() and 0xFF) shl 24)
 
-                return fullArray.copyOfRange(startIndex, endIndex)
+                var dataOffset = 44
+                for (i in 0 until bytes.size - 4) {
+                    if (bytes[i] == 'd'.code.toByte() &&
+                        bytes[i+1] == 'a'.code.toByte() &&
+                        bytes[i+2] == 't'.code.toByte() &&
+                        bytes[i+3] == 'a'.code.toByte()) {
+                        dataOffset = i + 8
+                        break
+                    }
+                }
+
+                val pcmBytes = bytes.copyOfRange(dataOffset.coerceAtMost(bytes.size), bytes.size)
+                val rawShorts = ShortArray(pcmBytes.size / 2)
+                ByteBuffer.wrap(pcmBytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(rawShorts)
+
+                val monoShorts = if (channels == 2) {
+                    val mono = ShortArray(rawShorts.size / 2)
+                    for (i in mono.indices) {
+                        val left = rawShorts[i * 2].toInt()
+                        val right = rawShorts[i * 2 + 1].toInt()
+                        mono[i] = ((left + right) / 2).toShort()
+                    }
+                    mono
+                } else {
+                    rawShorts
+                }
+
+                val trimSamples = (fileSampleRate * trimSeconds).toInt()
+                val startIndex = trimSamples.coerceAtMost(monoShorts.size / 2)
+                val endIndex = (monoShorts.size - trimSamples).coerceAtLeast(startIndex)
+
+                return LoadedWav(monoShorts.copyOfRange(startIndex, endIndex), fileSampleRate)
             }
         } catch (e: Exception) {
             e.printStackTrace()
         }
-        return ShortArray(0)
+        return LoadedWav(ShortArray(0), 44100)
     }
 
     fun start() {
-        if (isRunning || sample1400.isEmpty()) return
-        val sampleRate = 44100
-        val minBufSize = AudioTrack.getMinBufferSize(sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
+        if (isRunning || wav1400.samples.isEmpty()) return
+        val outputSampleRate = 44100
+        val minBufSize = AudioTrack.getMinBufferSize(outputSampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT)
 
         val audioAttributes = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_GAME)
@@ -317,7 +353,7 @@ class MultiSampleCrossfadeEngine(private val context: Context) {
 
         val audioFormat = AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_16BIT)
-            .setSampleRate(sampleRate)
+            .setSampleRate(outputSampleRate)
             .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
             .build()
 
@@ -349,16 +385,17 @@ class MultiSampleCrossfadeEngine(private val context: Context) {
                 if (currentRpm < 300.0) {
                     writeBuffer.fill(0)
                 } else {
-                    val speed1400 = currentRpm / 1400.0
-                    val speed4000 = currentRpm / 4000.0
-                    val speed6000 = currentRpm / 6000.0
-                    val speed8000 = currentRpm / 8000.0
+                    val activeRpm = currentRpm * rpmMultiplier
 
-                    val (w1, w2, w3, w4) = calculateWeights(currentRpm)
+                    val speed1400 = (activeRpm / 1400.0) * (wav1400.sampleRate / 44100.0)
+                    val speed4000 = (activeRpm / 4000.0) * (wav4000.sampleRate / 44100.0)
+                    val speed6000 = (activeRpm / 6000.0) * (wav6000.sampleRate / 44100.0)
+                    val speed8000 = (activeRpm / 8000.0) * (wav8000.sampleRate / 44100.0)
 
-                    // Configure DSP Filters (Softness = 1600Hz LPF base, Sweetness = -5dB @ 1.4kHz, Warmth = +4dB @ 320Hz)
+                    val (w1, w2, w3, w4) = calculateWeights(activeRpm)
+
                     val baseCutoff = 1600.0
-                    val dynamicCutoff = (baseCutoff + (currentRpm * 0.22)).coerceAtMost(12000.0)
+                    val dynamicCutoff = (baseCutoff + (activeRpm * 0.22)).coerceAtMost(12000.0)
 
                     warmthEq.setPeakingEq(44100.0, 320.0, 4.0, 1.0)
                     sweetnessDip.setPeakingEq(44100.0, 1400.0, -5.0, 1.4)
@@ -366,14 +403,13 @@ class MultiSampleCrossfadeEngine(private val context: Context) {
                     lpf2.setLowPass(44100.0, dynamicCutoff, 0.707)
 
                     for (i in writeBuffer.indices) {
-                        val s1 = getInterpolatedSample(sample1400, ptr1400)
-                        val s2 = getInterpolatedSample(sample4000, ptr4000)
-                        val s3 = getInterpolatedSample(sample6000, ptr6000)
-                        val s4 = getInterpolatedSample(sample8000, ptr8000)
+                        val s1 = getInterpolatedSample(wav1400.samples, ptr1400)
+                        val s2 = getInterpolatedSample(wav4000.samples, ptr4000)
+                        val s3 = getInterpolatedSample(wav6000.samples, ptr6000)
+                        val s4 = getInterpolatedSample(wav8000.samples, ptr8000)
 
                         var blended = (s1 * w1) + (s2 * w2) + (s3 * w3) + (s4 * w4)
 
-                        // Process through Stock Exhaust DSP Filter Chain
                         if (isFilterEnabled) {
                             blended = warmthEq.process(blended)
                             blended = sweetnessDip.process(blended)
@@ -383,10 +419,10 @@ class MultiSampleCrossfadeEngine(private val context: Context) {
 
                         writeBuffer[i] = blended.toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort()
 
-                        if (sample1400.isNotEmpty()) ptr1400 = (ptr1400 + speed1400) % sample1400.size
-                        if (sample4000.isNotEmpty()) ptr4000 = (ptr4000 + speed4000) % sample4000.size
-                        if (sample6000.isNotEmpty()) ptr6000 = (ptr6000 + speed6000) % sample6000.size
-                        if (sample8000.isNotEmpty()) ptr8000 = (ptr8000 + speed8000) % sample8000.size
+                        if (wav1400.samples.isNotEmpty()) ptr1400 = (ptr1400 + speed1400) % wav1400.samples.size
+                        if (wav4000.samples.isNotEmpty()) ptr4000 = (ptr4000 + speed4000) % wav4000.samples.size
+                        if (wav6000.samples.isNotEmpty()) ptr6000 = (ptr6000 + speed6000) % wav6000.samples.size
+                        if (wav8000.samples.isNotEmpty()) ptr8000 = (ptr8000 + speed8000) % wav8000.samples.size
                     }
                 }
                 audioTrack?.write(writeBuffer, 0, writeBuffer.size)
@@ -423,9 +459,7 @@ class MultiSampleCrossfadeEngine(private val context: Context) {
         return buffer[idx0] + frac * (buffer[idx1] - buffer[idx0])
     }
 
-    fun setRpm(r6Rpm: Double) {
-        targetRpm = r6Rpm
-    }
+    fun setRpm(r6Rpm: Double) { targetRpm = r6Rpm }
 
     fun stop() {
         isRunning = false
@@ -434,9 +468,6 @@ class MultiSampleCrossfadeEngine(private val context: Context) {
     }
 }
 
-/**
- * High-Efficiency Real-Time Biquad DSP Filter Implementation
- */
 class BiquadFilter {
     private var b0 = 1.0; private var b1 = 0.0; private var b2 = 0.0
     private var a1 = 0.0; private var a2 = 0.0
