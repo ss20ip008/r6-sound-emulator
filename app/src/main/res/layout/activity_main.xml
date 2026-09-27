@@ -1,63 +1,182 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:orientation="vertical"
-    android:padding="24dp"
-    android:gravity="center_horizontal"
-    android:background="#121212">
+    android:background="#121212"
+    android:fillViewport="true">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Yamaha R6 Sound Emulator"
-        android:textColor="#FFFFFF"
-        android:textSize="22sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="24dp" />
-
-    <TextView
-        android:id="@+id/statusText"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Status: Disconnected"
-        android:textColor="#FFBB86FC"
-        android:textSize="14sp"
-        android:layout_marginBottom="24dp" />
+        android:orientation="vertical"
+        android:padding="20dp">
 
-    <TextView
-        android:id="@+id/bikeRpmText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Bike RPM: 0"
-        android:textColor="#03DAC6"
-        android:textSize="26sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="12dp" />
+        <!-- Title -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="Yamaha R6 Sound Emulator"
+            android:textColor="#FFFFFF"
+            android:textSize="22sp"
+            android:textStyle="bold" />
 
-    <TextView
-        android:id="@+id/r6RpmText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Yamaha R6 RPM: 0"
-        android:textColor="#CF6679"
-        android:textSize="26sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="36dp" />
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:layout_marginTop="4dp"
+            android:text="Stock Exhaust Acoustic Tuning"
+            android:textColor="#03DAC6"
+            android:textSize="12sp" />
 
-    <Button
-        android:id="@+id/connectBtn"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="Connect OBD2"
-        android:textSize="16sp"
-        android:layout_marginBottom="16dp" />
+        <!-- Status Box -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:background="#1E1E1E"
+            android:orientation="vertical"
+            android:padding="16dp">
 
-    <Button
-        android:id="@+id/soundBtn"
-        android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="Start Sound"
-        android:textSize="16sp" />
+            <TextView
+                android:id="@+id/statusText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Status: Disconnected"
+                android:textColor="#BB86FC"
+                android:textSize="14sp" />
 
-</LinearLayout>
+            <Button
+                android:id="@+id/connectBtn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:backgroundTint="#03DAC6"
+                android:text="Connect OBD2"
+                android:textColor="#000000"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- RPM Display Box -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="#1E1E1E"
+            android:gravity="center"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <TextView
+                android:id="@+id/bikeRpmText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Bike RPM: 0"
+                android:textColor="#888888"
+                android:textSize="16sp" />
+
+            <TextView
+                android:id="@+id/r6RpmText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="Yamaha R6 RPM: 0"
+                android:textColor="#CF6679"
+                android:textSize="28sp"
+                android:textStyle="bold" />
+
+            <Button
+                android:id="@+id/soundBtn"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:backgroundTint="#CF6679"
+                android:text="Start Sound"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Sound & Simulator Controls Box -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:background="#1E1E1E"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Audio Controls &amp; Testing"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <!-- Stock Exhaust DSP Filter Toggle -->
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignParentStart="true"
+                    android:layout_centerVertical="true"
+                    android:text="Stock Exhaust Muffling Filter"
+                    android:textColor="#DDDDDD"
+                    android:textSize="14sp" />
+
+                <Switch
+                    android:id="@+id/filterSwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:checked="true" />
+            </RelativeLayout>
+
+            <!-- Divider Line -->
+            <View
+                android:layout_width="match_parent"
+                android:layout_height="1dp"
+                android:layout_marginTop="16dp"
+                android:layout_marginBottom="16dp"
+                android:background="#333333" />
+
+            <!-- RPM Simulator Controls -->
+            <TextView
+                android:id="@+id/simRpmText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Simulated RPM: 1400"
+                android:textColor="#03DAC6"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <SeekBar
+                android:id="@+id/simRpmSeekBar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:max="9500"
+                android:progress="1400"
+                android:progressBackgroundTint="#444444"
+                android:progressTint="#03DAC6"
+                android:thumbTint="#03DAC6" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center"
+                android:text="Drag slider to test sound without OBD connection"
+                android:textColor="#666666"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+    </LinearLayout>
+</ScrollView>
