@@ -11,7 +11,6 @@
         android:orientation="vertical"
         android:padding="20dp">
 
-        <!-- Title -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -30,7 +29,6 @@
             android:textColor="#03DAC6"
             android:textSize="12sp" />
 
-        <!-- Status Box -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -58,7 +56,6 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- RPM Display Box -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -98,7 +95,6 @@
                 android:textStyle="bold" />
         </LinearLayout>
 
-        <!-- Sound & Simulator Controls Box -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -110,7 +106,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Audio Controls &amp; Testing"
+                android:text="Audio Controls &amp; Pitch Tuning"
                 android:textColor="#FFFFFF"
                 android:textSize="16sp"
                 android:textStyle="bold" />
@@ -139,7 +135,30 @@
                     android:checked="true" />
             </RelativeLayout>
 
-            <!-- Divider Line -->
+            <!-- 0.5x Pitch Correction Toggle -->
+            <RelativeLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp">
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignParentStart="true"
+                    android:layout_centerVertical="true"
+                    android:text="Enable 0.5x Pitch Correction"
+                    android:textColor="#DDDDDD"
+                    android:textSize="14sp" />
+
+                <Switch
+                    android:id="@+id/halfRpmSwitch"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_alignParentEnd="true"
+                    android:layout_centerVertical="true"
+                    android:checked="false" />
+            </RelativeLayout>
+
             <View
                 android:layout_width="match_parent"
                 android:layout_height="1dp"
@@ -147,7 +166,6 @@
                 android:layout_marginBottom="16dp"
                 android:background="#333333" />
 
-            <!-- RPM Simulator Controls -->
             <TextView
                 android:id="@+id/simRpmText"
                 android:layout_width="wrap_content"
